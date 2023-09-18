@@ -96,6 +96,7 @@ def get_solcast(
 
     if response.status_code == 200:
         j = response.json()
+        print(j)
         df = pd.DataFrame.from_dict(j[list(j.keys())[0]])
         return df
     else:
