@@ -1,11 +1,10 @@
 import pandas as pd
-from pvlib.iotools import get_solcast
+from pvlib.iotools.solcast import get_solcast_live, format_df
 import pytest
 
-@pytest.mark.parametrize("params,json_response", [
-    (
+@pytest.mark.parametrize("endpoint,params,json_response", [
+    (   "live/radiation_and_weather",
         dict(
-            endpoint="live/radiation_and_weather",
             api_key="1234",
             latitude = -33.856784,
             longitude = 151.215297,
@@ -20,13 +19,15 @@ import pytest
         }
     )
 ])
-def test_get_solcast(requests_mock, params, json_response):
+def test_get_solcast(requests_mock, endpoint, params, json_response):
 
-    mock_url = f"https://api.solcast.com.au/data/{params['endpoint']}?" \
+    mock_url = f"https://api.solcast.com.au/data/{endpoint}?" \
                f"&latitude={params['latitude']}&longitude={params['longitude']}&" \
                f"output_parameters={params['output_parameters']}&format=json"
 
     requests_mock.get(mock_url, json=json_response)
 
-    res = get_solcast(**params)
-    pd.testing.assert_frame_equal(res, pd.DataFrame.from_dict(json_response[list(json_response.keys())[0]]))
+    pd.testing.assert_frame_equal(
+        get_solcast_live(**params),
+        format_df(pd.DataFrame.from_dict(json_response[list(json_response.keys())[0]]))
+    )
