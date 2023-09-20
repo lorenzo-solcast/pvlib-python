@@ -1,26 +1,27 @@
 import pandas as pd
-from pvlib.iotools.solcast import get_solcast_live, solcast2pvlib
+from pvlib.iotools.solcast import get_solcast_live, get_solcast_tmy, solcast2pvlib
 import pytest
 
 
-@pytest.mark.parametrize("endpoint,params,json_response", [
-    (   "live/radiation_and_weather",
+@pytest.mark.parametrize("endpoint,function,params,json_response", [
+    (
+        "live/radiation_and_weather",
+        get_solcast_live,
         dict(
             api_key="1234",
             latitude = -33.856784,
             longitude = 151.215297,
             output_parameters = 'dni,ghi'
         ),
-        {
-        'estimated_actuals':
+        {'estimated_actuals':
             [{'dni': 836, 'ghi': 561, 'period_end': '2023-09-18T05:00:00.0000000Z', 'period': 'PT30M'},
              {'dni': 866, 'ghi': 643, 'period_end': '2023-09-18T04:30:00.0000000Z', 'period': 'PT30M'},
              {'dni': 890, 'ghi': 713, 'period_end': '2023-09-18T04:00:00.0000000Z', 'period': 'PT30M'},
              {'dni': 909, 'ghi': 768, 'period_end': '2023-09-18T03:30:00.0000000Z', 'period': 'PT30M'}]
         }
-    )
+    ),
 ])
-def test_get_solcast(requests_mock, endpoint, params, json_response):
+def test_get_solcast_live(requests_mock, endpoint, function, params, json_response):
 
     mock_url = f"https://api.solcast.com.au/data/{endpoint}?" \
                f"&latitude={params['latitude']}&longitude={params['longitude']}&" \
@@ -29,9 +30,41 @@ def test_get_solcast(requests_mock, endpoint, params, json_response):
     requests_mock.get(mock_url, json=json_response)
 
     pd.testing.assert_frame_equal(
-        get_solcast_live(**params),
+        function(**params),
         solcast2pvlib(pd.DataFrame.from_dict(json_response[list(json_response.keys())[0]]))
     )
+
+
+@pytest.mark.parametrize("endpoint,function,params,json_response", [
+    (
+        "tmy/radiation_and_weather",
+        get_solcast_tmy,
+        dict(
+            api_key="1234",
+            latitude = -33.856784,
+            longitude = 151.215297
+        ),
+        {'estimated_actuals': [
+            {'dni': 151, 'ghi': 609, 'period_end': '2059-01-01T01:00:00.0000000Z', 'period': 'PT60M'},
+            {'dni': 0, 'ghi': 404, 'period_end': '2059-01-01T02:00:00.0000000Z', 'period': 'PT60M'},
+            {'dni': 0, 'ghi': 304, 'period_end': '2059-01-01T03:00:00.0000000Z', 'period': 'PT60M'},
+            {'dni': 0, 'ghi': 174, 'period_end': '2059-01-01T04:00:00.0000000Z', 'period': 'PT60M'},
+            {'dni': 0, 'ghi': 111, 'period_end': '2059-01-01T05:00:00.0000000Z', 'period': 'PT60M'}]
+        }
+    ),
+])
+def test_get_solcast_tmy(requests_mock, endpoint, function, params, json_response):
+
+    mock_url = f"https://api.solcast.com.au/data/{endpoint}?" \
+               f"&latitude={params['latitude']}&longitude={params['longitude']}&format=json"
+
+    requests_mock.get(mock_url, json=json_response)
+
+    pd.testing.assert_frame_equal(
+        function(**params),
+        solcast2pvlib(pd.DataFrame.from_dict(json_response[list(json_response.keys())[0]]))
+    )
+
 
 @pytest.mark.parametrize("in_df,out_df", [
     (

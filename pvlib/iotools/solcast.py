@@ -1,5 +1,7 @@
 """ Functions to access data from the Solcast API.
 """
+import os
+
 import requests
 import pandas as pd
 from dataclasses import dataclass
@@ -7,9 +9,29 @@ from dataclasses import dataclass
 
 BASE_URL = "https://api.solcast.com.au/data"
 
+@dataclass
+class ParameterMap:
+    solcast_name: str
+    pvlib_name: str
+    conversion: callable=lambda x: x
+
+# define the conventions between Solcast and PVLib nomenclature and units
+VARIABLE_MAP = [
+    ParameterMap("air_temp", "temp_air"),  # air_temp -> temp_air (deg C)
+    ParameterMap("surface_pressure", "pressure", lambda x: x*100),  # surface_pressure (hPa) -> pressure (Pa)
+    ParameterMap("dewpoint_temp", "temp_dew"),  # dewpoint_temp -> temp_dew (deg C)
+    ParameterMap("gti", "poa_global"),  # gti (W/m^2) -> poa_global (W/m^2)
+    ParameterMap("wind_speed_10m", "wind_speed"),  # wind_speed_10m (m/s) -> wind_speed (m/s)
+    ParameterMap("wind_direction_10m", "wind_direction"),  # wind_direction_10m (deg) -> wind_direction  (deg) (Convention?)
+    ParameterMap(
+        "azimuth", "solar_azimuth", lambda x: abs(x) if x <= 0 else 360 - x
+                 ),  # azimuth -> solar_azimuth (degrees) (different convention)
+    ParameterMap("precipitable_water", "precipitable_water", lambda x: x*10)  # precipitable_water (kg/m2) -> precipitable_water (cm)
+]
+
 
 def get_solcast_tmy(
-    latitude, longitude, api_key, **kwargs
+    latitude, longitude, api_key, map_variables=True, **kwargs
 ):
     """Get the irradiance and weather for a Typical Meteorological Year (TMY) at a requested location.
 
@@ -24,6 +46,9 @@ def get_solcast_tmy(
         in decimal degrees, between -180 and 180, east is positive
     api_key : str
         To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
+    map_variables: bool, default: True
+        When true, renames columns of the DataFrame to pvlib variable names
+        where applicable. See variable :const:`VARIABLE_MAP`.
     kwargs:
         Optional parameters passed to the API. See https://docs.solcast.com.au/ for full list of parameters.
 
@@ -52,7 +77,8 @@ def get_solcast_tmy(
     return _get_solcast(
         endpoint="tmy/radiation_and_weather",
         params=params,
-        api_key=api_key
+        api_key=api_key,
+        map_variables=map_variables
     )
 
 
@@ -63,6 +89,7 @@ def get_solcast_historic(
     api_key,
     end=None,
     duration=None,
+    map_variables=True,
     **kwargs
 ):
     """Get historical irradiance and weather estimated actuals
@@ -85,6 +112,9 @@ def get_solcast_historic(
     duration : optional, default is None
         Must include one of end_date and duration. ISO_8601 compliant duration for the historic data.
         Must be within 31 days of the start_date.
+    map_variables: bool, default: True
+        When true, renames columns of the DataFrame to pvlib variable names
+        where applicable. See variable :const:`VARIABLE_MAP`.
     api_key : str
         To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
     kwargs:
@@ -122,11 +152,12 @@ def get_solcast_historic(
     return _get_solcast(
         endpoint="historic/radiation_and_weather",
         params=params,
-        api_key=api_key
+        api_key=api_key,
+        map_variables=map_variables
     )
 
 def get_solcast_forecast(
-    latitude, longitude, output_parameters, api_key, **kwargs
+    latitude, longitude, output_parameters, api_key, map_variables=True, **kwargs
 ):
     """Get irradiance and weather forecasts from the present time up to 14 days ahead
 
@@ -140,7 +171,9 @@ def get_solcast_forecast(
         list of strings with the parameters to return
     api_key : str
         To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
-
+    map_variables: bool, default: True
+        When true, renames columns of the DataFrame to pvlib variable names
+        where applicable. See variable :const:`VARIABLE_MAP`.
     kwargs:
         Optional parameters passed to the GET request
 
@@ -172,11 +205,12 @@ def get_solcast_forecast(
     return _get_solcast(
         endpoint="forecast/radiation_and_weather",
         params=params,
-        api_key=api_key
+        api_key=api_key,
+        map_variables=map_variables
     )
 
 def get_solcast_live(
-    latitude, longitude, output_parameters, api_key, **kwargs
+    latitude, longitude, output_parameters, api_key, map_variables=True, **kwargs
 ):
     """Get irradiance and weather estimated actuals for near real-time and past 7 days
 
@@ -190,7 +224,9 @@ def get_solcast_live(
         list of strings with the parameters to return
     api_key : str
         To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
-
+    map_variables: bool, default: True
+        When true, renames columns of the DataFrame to pvlib variable names
+        where applicable. See variable :const:`VARIABLE_MAP`.
     kwargs:
         Optional parameters passed to the GET request
 
@@ -222,30 +258,9 @@ def get_solcast_live(
     return _get_solcast(
         endpoint="live/radiation_and_weather",
         params=params,
-        api_key=api_key
+        api_key=api_key,
+        map_variables=map_variables
     )
-
-# define the conventions between Solcast and PVLib
-@dataclass
-class ParameterMap:
-    solcast_name: str
-    pvlib_name: str
-    conversion: callable=lambda x: x
-
-
-parameters_map = [
-    ParameterMap("air_temp", "temp_air"),  # air_temp -> temp_air (deg C)
-    ParameterMap("surface_pressure", "pressure", lambda x: x*100),  # surface_pressure (hPa) -> pressure (Pa)
-    ParameterMap("dewpoint_temp", "temp_dew"),  # dewpoint_temp -> temp_dew (deg C)
-    ParameterMap("gti", "poa_global"),  # gti (W/m^2) -> poa_global (W/m^2)
-    ParameterMap("wind_speed_10m", "wind_speed"),  # wind_speed_10m (m/s) -> wind_speed (m/s)
-    ParameterMap("wind_direction_10m", "wind_direction"),  # wind_direction_10m (deg) -> wind_direction  (deg) (Convention?)
-    ParameterMap(
-        "azimuth", "solar_azimuth", lambda x: abs(x) if x <= 0 else 360 - x
-                 ),  # azimuth -> solar_azimuth (degrees) (different convention)
-    ParameterMap("precipitable_water", "precipitable_water", lambda x: x*10)  # precipitable_water (kg/m2) -> precipitable_water (cm)
-]
-
 
 def solcast2pvlib(df):
     """Formats the data from Solcast to PVLib's conventions.
@@ -255,7 +270,7 @@ def solcast2pvlib(df):
     df = df.set_index("period_mid").drop(columns=["period_end", "period"])
 
     # rename and convert variables
-    for variable in parameters_map:
+    for variable in VARIABLE_MAP:
         if variable.solcast_name in df.columns:
             df.rename(columns={variable.solcast_name: variable.pvlib_name}, inplace=True)
             df[variable.pvlib_name] = df[variable.pvlib_name].apply(variable.conversion)
@@ -264,7 +279,8 @@ def solcast2pvlib(df):
 def _get_solcast(
         endpoint,
         params,
-        api_key
+        api_key,
+        map_variables
 ):
     """retrieves weather, irradiance and power data from the Solcast API
 
@@ -276,14 +292,17 @@ def _get_solcast(
             - forecast/radiation_and_weather
             - historic/radiation_and_weather
             - tmy/radiation_and_weather
-
+    params : dict
+        parameters to be passed to the API
     api_key : str
         To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
+    map_variables: bool, default: True
+        When true, renames columns of the DataFrame to pvlib variable names
+        where applicable. See variable :const:`VARIABLE_MAP`.
 
-    kwargs : dict
-        the parameters to pass to the api. For a full list of parameters for each endpoint
-        see the API docs: https://docs.solcast.com.au/
-
+    Returns
+    -------
+    A pandas.DataFrame with the data if the request is successful, an error message otherwise
     """
 
     response = requests.get(
@@ -295,6 +314,9 @@ def _get_solcast(
     if response.status_code == 200:
         j = response.json()
         df = pd.DataFrame.from_dict(j[list(j.keys())[0]])
-        return solcast2pvlib(df)
+        if map_variables:
+            return solcast2pvlib(df)
+        else:
+            return df
     else:
         raise Exception(response.json())
