@@ -2,64 +2,10 @@
 """
 import requests
 import pandas as pd
+from dataclasses import dataclass
+
 
 BASE_URL = "https://api.solcast.com.au/data"
-
-
-# TODO: https://pvlib-python.readthedocs.io/en/stable/user_guide/variables_style_rules.html
-PARAMETERS_MAPPING = dict(
-
-)
-
-
-def format_df(df):
-    """formats the dataframe with the data from the API inot to pvlib's conventions.
-    """
-    # move from period_end to period_middle as per pvlib convention
-    df["period_mid"] = pd.to_datetime(df.period_end) - pd.Timedelta(df.period.values[0]) / 2
-    df = df.set_index("period_mid").drop(columns=["period_end", "period"])
-
-    # rename columns
-    df = df.rename(columns=PARAMETERS_MAPPING)
-    return df
-
-def _get_solcast(
-        endpoint,
-        params,
-        api_key
-):
-    """retrieves weather, irradiance and power data from the Solcast API
-
-    Parameters
-    ----------
-    endpoint : str
-        one of Solcast API endpoint:
-            - live/radiation_and_weather
-            - forecast/radiation_and_weather
-            - historic/radiation_and_weather
-            - tmy/radiation_and_weather
-
-    api_key : str
-        To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
-
-    kwargs : dict
-        the parameters to pass to the api. For a full list of parameters for each endpoint
-        see the API docs: https://docs.solcast.com.au/
-
-    """
-
-    response = requests.get(
-        url= '/'.join([BASE_URL, endpoint]),
-        params=params,
-        headers={"Authorization": f"Bearer {api_key}"}
-    )
-
-    if response.status_code == 200:
-        j = response.json()
-        df = pd.DataFrame.from_dict(j[list(j.keys())[0]])
-        return format_df(df)
-    else:
-        raise Exception(response.json())
 
 
 def get_solcast_tmy(
@@ -278,3 +224,77 @@ def get_solcast_live(
         params=params,
         api_key=api_key
     )
+
+# define the conventions between Solcast and PVLib
+@dataclass
+class ParameterMap:
+    solcast_name: str
+    pvlib_name: str
+    conversion: callable=lambda x: x
+
+
+parameters_map = [
+    ParameterMap("air_temp", "temp_air"),  # air_temp -> temp_air (deg C)
+    ParameterMap("surface_pressure", "pressure", lambda x: x*100),  # surface_pressure (hPa) -> pressure (Pa)
+    ParameterMap("dewpoint_temp", "temp_dew"),  # dewpoint_temp -> temp_dew (deg C)
+    ParameterMap("gti", "poa_global"),  # gti (W/m^2) -> poa_global (W/m^2)
+    ParameterMap("wind_speed_10m", "wind_speed"),  # wind_speed_10m (m/s) -> wind_speed (m/s)
+    ParameterMap("wind_direction_10m", "wind_direction"),  # wind_direction_10m (deg) -> wind_direction  (deg) (Convention?)
+    ParameterMap(
+        "azimuth", "solar_azimuth", lambda x: abs(x) if x <= 0 else 360 - x
+                 ),  # azimuth -> solar_azimuth (degrees) (different convention)
+    ParameterMap("precipitable_water", "precipitable_water", lambda x: x*10)  # precipitable_water (kg/m2) -> precipitable_water (cm)
+]
+
+
+def solcast2pvlib(df):
+    """Formats the data from Solcast to PVLib's conventions.
+    """
+    # move from period_end to period_middle as per pvlib convention
+    df["period_mid"] = pd.to_datetime(df.period_end) - pd.Timedelta(df.period.values[0]) / 2
+    df = df.set_index("period_mid").drop(columns=["period_end", "period"])
+
+    # rename and convert variables
+    for variable in parameters_map:
+        if variable.solcast_name in df.columns:
+            df.rename(columns={variable.solcast_name: variable.pvlib_name}, inplace=True)
+            df[variable.pvlib_name] = df[variable.pvlib_name].apply(variable.conversion)
+    return df
+
+def _get_solcast(
+        endpoint,
+        params,
+        api_key
+):
+    """retrieves weather, irradiance and power data from the Solcast API
+
+    Parameters
+    ----------
+    endpoint : str
+        one of Solcast API endpoint:
+            - live/radiation_and_weather
+            - forecast/radiation_and_weather
+            - historic/radiation_and_weather
+            - tmy/radiation_and_weather
+
+    api_key : str
+        To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
+
+    kwargs : dict
+        the parameters to pass to the api. For a full list of parameters for each endpoint
+        see the API docs: https://docs.solcast.com.au/
+
+    """
+
+    response = requests.get(
+        url= '/'.join([BASE_URL, endpoint]),
+        params=params,
+        headers={"Authorization": f"Bearer {api_key}"}
+    )
+
+    if response.status_code == 200:
+        j = response.json()
+        df = pd.DataFrame.from_dict(j[list(j.keys())[0]])
+        return solcast2pvlib(df)
+    else:
+        raise Exception(response.json())
