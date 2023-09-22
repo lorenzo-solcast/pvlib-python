@@ -1,6 +1,5 @@
 """ Functions to access data from the Solcast API.
 """
-import os
 
 import requests
 import pandas as pd
@@ -26,7 +25,8 @@ VARIABLE_MAP = [
     ParameterMap(
         "azimuth", "solar_azimuth", lambda x: abs(x) if x <= 0 else 360 - x
                  ),  # azimuth -> solar_azimuth (degrees) (different convention)
-    ParameterMap("precipitable_water", "precipitable_water", lambda x: x*10)  # precipitable_water (kg/m2) -> precipitable_water (cm)
+    ParameterMap("precipitable_water", "precipitable_water", lambda x: x*10),  # precipitable_water (kg/m2) -> precipitable_water (cm)
+    ParameterMap("zenith", "solar_zenith")  # zenith -> solar_zenith
 ]
 
 
@@ -62,9 +62,18 @@ def get_solcast_tmy(
     get_solcast_tmy(
         latitude=-33.856784,
         longitude=151.215297,
-        output_parameters='dni,ghi',
         api_key="your-key"
     )
+
+    you can pass any of the parameters listed in the API docs, like time_zone:
+
+    get_solcast_tmy(
+        latitude=-33.856784,
+        longitude=151.215297,
+        time_zone=10,
+        api_key="your-key"
+    )
+
     """
 
     params = dict(
@@ -136,14 +145,24 @@ def get_solcast_historic(
         duration='P1D',
         api_key="your-key"
     )
+
+    you can pass any of the parameters listed in the API docs, for example using the end parameter instead
+
+    get_solcast_historic(
+        latitude=-33.856784,
+        longitude=151.215297,
+        start='2007-01-01T00:00Z',
+        end='2007-01-02T00:00Z',
+        api_key="your-key"
+    )
     """
 
     params = dict(
         latitude=latitude,
         longitude=longitude,
         start=start,
-        end=end if end is not None else None,
-        duration=duration if duration is not None else None,
+        end=end,
+        duration=duration,
         api_key=api_key,
         format="json",
         **kwargs
@@ -157,7 +176,7 @@ def get_solcast_historic(
     )
 
 def get_solcast_forecast(
-    latitude, longitude, output_parameters, api_key, map_variables=True, **kwargs
+    latitude, longitude, api_key, map_variables=True, **kwargs
 ):
     """Get irradiance and weather forecasts from the present time up to 14 days ahead
 
@@ -167,8 +186,6 @@ def get_solcast_forecast(
         in decimal degrees, between -90 and 90, north is positive
     longitude : float
         in decimal degrees, between -180 and 180, east is positive
-    output_parameters : list
-        list of strings with the parameters to return
     api_key : str
         To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
     map_variables: bool, default: True
@@ -189,7 +206,14 @@ def get_solcast_forecast(
     get_solcast_forecast(
         latitude=-33.856784,
         longitude=151.215297,
-        output_parameters='dni,ghi',
+        api_key="your-key"
+    )
+
+    you can pass any of the parameters listed in the API docs, like asking for specific variables
+    get_solcast_forecast(
+        latitude=-33.856784,
+        longitude=151.215297,
+        output_parameters='dni,clearsky_dni',
         api_key="your-key"
     )
     """
@@ -197,7 +221,6 @@ def get_solcast_forecast(
     params = dict(
         latitude=latitude,
         longitude=longitude,
-        output_parameters=output_parameters,
         format="json",
         **kwargs
     )
@@ -210,7 +233,7 @@ def get_solcast_forecast(
     )
 
 def get_solcast_live(
-    latitude, longitude, output_parameters, api_key, map_variables=True, **kwargs
+    latitude, longitude, api_key, map_variables=True, **kwargs
 ):
     """Get irradiance and weather estimated actuals for near real-time and past 7 days
 
@@ -220,8 +243,6 @@ def get_solcast_live(
         in decimal degrees, between -90 and 90, north is positive
     longitude : float
         in decimal degrees, between -180 and 180, east is positive
-    output_parameters : list
-        list of strings with the parameters to return
     api_key : str
         To access Solcast data you will need an API key: https://toolkit.solcast.com.au/register.
     map_variables: bool, default: True
@@ -242,7 +263,24 @@ def get_solcast_live(
     get_solcast_live(
         latitude=-33.856784,
         longitude=151.215297,
-        output_parameters='dni,ghi',
+        api_key="your-key"
+    )
+
+    you can pass any of the parameters listed in the API docs, like
+
+    get_solcast_live(
+        latitude=-33.856784,
+        longitude=151.215297,
+        terrain_shading=True,
+        api_key="your-key"
+    )
+
+    use map_variables=False to avoid converting the data to PVLib's conventions
+
+    get_solcast_live(
+        latitude=-33.856784,
+        longitude=151.215297,
+        map_variables=False,
         api_key="your-key"
     )
     """
@@ -250,7 +288,6 @@ def get_solcast_live(
     params = dict(
         latitude=latitude,
         longitude=longitude,
-        output_parameters=output_parameters,
         format="json",
         **kwargs
     )
