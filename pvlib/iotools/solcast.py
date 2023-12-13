@@ -47,7 +47,7 @@ def get_solcast_tmy(
     """Get irradiance and weather for a
     Typical Meteorological Year (TMY) at a requested location.
 
-    Data derived from a multi-year time series selected to present the
+    Data is derived from a multi-year time series selected to present the
     unique weather phenomena with annual averages that are consistent with
     long term averages. See [1]_ for details on the calculation.
 
